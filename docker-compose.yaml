@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: client-server-db
+    restart: always
+    platform: linux/amd64
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: client-server-db
+    ports:
+      - "3306:3306"
