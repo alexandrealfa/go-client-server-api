@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	_ "gorm.io/gorm"
 	"io"
 	"log"
 	"net/http"
@@ -16,6 +19,12 @@ func getURL() (url string) {
 
 type Price struct {
 	url string
+}
+
+type LogSchema struct {
+	Id       int `gorm:"primaryKey"`
+	Value    string
+	CoinType string
 }
 
 type serializedJson struct {
@@ -43,13 +52,25 @@ func (p Price) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 
 	price, err := p.getPrice()
 	if err != nil {
-		log.Fatal("aquii", err.Error())
+		log.Println("Error to get Price: ", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
+
+	dataLog := LogSchema{
+		Value:    price.USDBRL.Bid,
+		CoinType: price.USDBRL.Code,
+	}
+
+	p.logData(dataLog)
+
 	response := serializedJson{"Dólar", price.USDBRL.Bid}
 
 	responseJson, marshalError := json.Marshal(response)
 	if marshalError != nil {
-		log.Fatal("error to Marshal response: ", marshalError.Error())
+		log.Println("error to Marshal response: ", marshalError.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -75,12 +96,13 @@ func (p Price) getPrice() (ResponseSchema, error) {
 	req, err := http.DefaultClient.Do(requestCtx)
 	if err != nil {
 		log.Println("Error to get request data: ", err.Error())
+		return data, err
 	}
 
 	res, parseError := io.ReadAll(req.Body)
 
 	if parseError != nil {
-		log.Println("error to read Json: ", res)
+		log.Println("error to read response: ", res)
 		return data, parseError
 	}
 
@@ -92,8 +114,26 @@ func (p Price) getPrice() (ResponseSchema, error) {
 	return data, err
 }
 
-func (p Price) logData() {
-	return
+func (p Price) logData(data LogSchema) {
+	var (
+		dsn                       = "root:root@tcp(localhost:3306)/client-server-db?charset=utf8mb4&parseTime=True&loc=Local"
+		timeoutTime time.Duration = 20
+	)
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Println("error to connect with database: ", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*timeoutTime)
+	defer cancel()
+	db.WithContext(ctx)
+
+	if err := db.AutoMigrate(&LogSchema{}); err != nil {
+		log.Println("Error to create table: ", err)
+	}
+
+	db.Create(&data)
 }
 
 func main() {
